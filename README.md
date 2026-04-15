@@ -1,14 +1,22 @@
 # ProductMicroservice
 
-Микросервис на **Spring Boot** с интеграцией **Apache Kafka**: настроена сериализация значений в JSON для продюсера и при старте объявляется топик `product-created-events-topic` для событий продукта.
+Микросервис на **Spring Boot 4** с **Spring Kafka**: создание продукта по HTTP, публикация события `ProductCreatedEvent` в топик `product-created-events-topic` (JSON).
 
 ## Требования
 
-- **JDK 17**
-- **Apache Maven** 3.6+ (или используйте `./mvnw` из корня репозитория)
-- **Kafka** (KRaft), доступный по адресам из `application.properties` (по умолчанию `localhost:9092,localhost:9094`)
+- **JDK 17** (в логах у вас может быть другая версия — для сборки заявлена 17 в `pom.xml`)
+- **Apache Maven** 3.6+ или **`./mvnw`** в корне репозитория
+- **Apache Kafka** (KRaft или ZooKeeper), брокеры из `spring.kafka.bootstrap-servers` в [`application.properties`](src/main/resources/application.properties) (по умолчанию `localhost:9092,localhost:9094`)
 
-Топик `product-created-events-topic` создаётся при старте приложения с параметрами: **3 партиции**, **replication factor 3**, `min.insync.replicas=2`. Для этого в кластере должно быть **не меньше трёх брокеров** и корректная конфигурация репликации; иначе создание топика или запись могут завершиться ошибкой.
+## HTTP API
+
+| Метод | Путь | Тело запроса (JSON) | Ответ |
+|--------|------|---------------------|--------|
+| `PATCH` | `/product` | `title` (string), `price` (number), `quantity` (integer) | **201 Created**, тело — строка `productId` |
+
+При ошибке в обработчике возможен ответ **500** с телом `ErrorMessage` (см. [`ProductController`](src/main/java/com/example/productmicroservice/controller/ProductController.java)).
+
+`server.port=0` — порт Tomcat **случайный** при каждом запуске; смотрите строку вида `Tomcat started on port ...` в логах.
 
 ## Быстрый старт
 
@@ -16,27 +24,52 @@
 ./mvnw spring-boot:run
 ```
 
-Или:
+Или JAR:
 
 ```bash
 ./mvnw clean package
 java -jar target/ProductMicroservice-0.0.1-SNAPSHOT.jar
 ```
 
-`server.port` в `application.properties` задан как `0` — порт веб-сервера выбирается **случайно** при каждом запуске; актуальный порт смотрите в логах Spring Boot.
+Пример запроса:
+
+```bash
+curl -s -X PATCH "http://localhost:<PORT>/product" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Sample","price":19.99,"quantity":10}'
+```
+
+## Kafka
+
+- Топик **`product-created-events-topic`** объявляется бином [`NewTopic`](src/main/java/com/example/productmicroservice/config/KafkaConfig.java): **3 партиции**, **replication factor 1** (подходит для **одного** брокера в разработке).
+- При старте приложения **KafkaAdmin** создаёт топик, если его ещё нет (`spring.kafka.admin.auto-create=true`).
+- Используйте **`spring.kafka.bootstrap-servers`** (именно **`bootstrap-servers`**, не `bootstrap-server` — иначе Spring Boot может оставить значения по умолчанию и подключение будет не тем, что вы ожидаете).
+- Для одного брокера задано **`spring.kafka.producer.acks=1`**, чтобы не требовать полный кворум реплик.
+
+Команды для локальной Kafka (список топиков, consumer и т.д.): [**KAFKA-KOMANDY.md**](KAFKA-KOMANDY.md).
+
+### Частые предупреждения consumer
+
+- **`UNKNOWN_TOPIC_OR_PARTITION`** для партиции `…-1` часто означает, что **consumer запустили до того**, как топик получил нужное число партиций, или топик ещё не создан. Запустите приложение, дождитесь успешного старта, затем снова запустите `kafka-console-consumer`, при необходимости с **новой** `--group` или `--from-beginning`.
+- Убедитесь, что **`--bootstrap-server`** у CLI совпадает с тем, куда ходит приложение.
+
+## Postman
+
+В каталоге [`postman/`](postman/) лежат файлы для импорта:
+
+- **`ProductMicroservice.postman_collection.json`** — коллекция с переменной `baseUrl`
+- **`Local.postman_environment.json`** — окружение с `baseUrl` (по умолчанию `http://localhost:8080`)
+
+Импорт: **File → Import** в Postman. Подставьте в `baseUrl` реальный URL из логов (из‑за `server.port=0` порт каждый раз новый).
+
+## Зависимости и Spring Boot 4
+
+- Для JSON в HTTP подключён **`spring-boot-starter-json`** (Jackson 3 / `tools.jackson` через Boot).
+- Клиент **Kafka 4.x** при настройке продюсера ожидает классы **`com.fasterxml.jackson`**; в `pom.xml` явно добавлен **`com.fasterxml.jackson.core:jackson-databind`**, чтобы не было `ClassNotFoundException` для `TypeReference`.
 
 ## Конфигурация
 
-Основные параметры: [`src/main/resources/application.properties`](src/main/resources/application.properties).
-
-- `spring.kafka.producer.bootstrap-server` — bootstrap-серверы Kafka (через запятую при необходимости).
-- Сериализация: ключ — строка, значение — JSON (`JsonSerializer`).
-
-Объявление топика: [`KafkaConfig.java`](src/main/java/com/example/productmicroservice/config/KafkaConfig.java).
-
-## Kafka локально
-
-Пошаговые команды для Linux (KRaft, одна нода или кластер из трёх брокеров): [**KAFKA-KOMANDY.md**](KAFKA-KOMANDY.md).
+Основной файл: [`src/main/resources/application.properties`](src/main/resources/application.properties).
 
 ## Сборка и тесты
 
@@ -46,9 +79,11 @@ java -jar target/ProductMicroservice-0.0.1-SNAPSHOT.jar
 
 ## Стек
 
-| Компонент        | Версия / заметка   |
-|------------------|--------------------|
-| Spring Boot      | 4.0.x (см. `pom.xml`) |
-| Java             | 17                 |
-| spring-boot-starter-kafka | да        |
-| spring-boot-starter-webmvc | да       |
+| Компонент | Заметка |
+|-----------|---------|
+| Spring Boot | 4.0.x (`pom.xml`) |
+| Java | 17 |
+| spring-boot-starter-kafka | да |
+| spring-boot-starter-webmvc | да |
+| spring-boot-starter-json | да |
+| jackson-databind (com.fasterxml) | явно, для совместимости с Kafka-клиентом |
