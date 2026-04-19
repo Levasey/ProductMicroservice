@@ -55,7 +55,11 @@ curl -s -X POST "http://localhost:<PORT>/product" \
 
 ### Продюсер
 
-- Настройки продюсера задаются в [`application.properties`](src/main/resources/application.properties): **`spring.kafka.producer.acks=all`**, таймауты **`delivery.timeout.ms`**, **`linger.ms`**, **`request.timeout.ms`** (см. файл).
+- Настройки продюсера задаются в [`application.properties`](src/main/resources/application.properties):
+  - **`spring.kafka.producer.acks=all`** — ждём подтверждения от всех реплик в ISR (согласуется с `min.insync.replicas` на топике).
+  - **`spring.kafka.producer.properties.enable.idempotence=true`** — идемпотентный продюсер (после сбоев не дублирует запись при повторной отправке).
+  - **`spring.kafka.producer.properties.max.in.flight.requests.per.connection=5`** — верхняя граница неподтверждённых запросов на соединение; при включённой идемпотентности Kafka допускает значения до **5** (по умолчанию всё равно **5**).
+  - Таймауты и отложенная отправка: **`delivery.timeout.ms`**, **`linger.ms`**, **`request.timeout.ms`** (значения — в файле).
 - В [`KafkaConfig`](src/main/java/com/example/productmicroservice/config/KafkaConfig.java) эти свойства собираются в `ProducerFactory` / `KafkaTemplate` для типа значения `ProductCreatedEvent` (JSON-сериализация через `JsonSerializer`).
 
 Команды для локальной Kafka (список топиков, consumer, **`kafka-configs`** для топика): [**KAFKA-KOMANDY.md**](KAFKA-KOMANDY.md).
