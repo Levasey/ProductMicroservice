@@ -3,16 +3,11 @@ package com.example.productmicroservice.controller;
 import com.example.productmicroservice.exception.ErrorMessage;
 import com.example.productmicroservice.service.ProductService;
 import com.example.productmicroservice.service.dto.CreateProductDto;
-import com.example.productmicroservice.service.event.ProductCreatedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.web.bind.annotation.PatchMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.Date;
 
@@ -26,7 +21,7 @@ public class ProductController {
     public ProductController(ProductService productService) {
         this.productService = productService;
     }
-    @PatchMapping
+    @PostMapping
     public ResponseEntity<Object> createProduct(@RequestBody CreateProductDto createProductDto) {
         String productId = null;
         try {

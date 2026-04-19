@@ -433,6 +433,45 @@ order-1002	{"reason":"timeout","ts":"2026-04-14T10:01:00Z"}
 
 Для кластера из трёх брокеров (раздел 4) в `--bootstrap-server` можно указать все три адреса, например `localhost:9092,localhost:9094,localhost:9096` — достаточно любого подмножества узлов для обнаружения метаданных.
 
+### 6.4. Изменение настроек топика (`kafka-configs`)
+
+Скрипт: **`$KAFKA_HOME/bin/kafka-configs.sh`** (при необходимости задайте `KAFKA_HOME`, см. начало файла).
+
+Пример: для топика микросервиса **`product-created-events-topic`** задать **`min.insync.replicas=2`** (имеет смысл при **replication factor ≥ 2** и достаточном числе брокеров в ISR):
+
+**Один брокер** (разработка, порт по умолчанию 9092):
+
+```bash
+"$KAFKA_HOME/bin/kafka-configs.sh" \
+  --bootstrap-server localhost:9092 \
+  --alter \
+  --entity-type topics \
+  --entity-name product-created-events-topic \
+  --add-config min.insync.replicas=2
+```
+
+**Кластер из трёх брокеров** (раздел 4) — подставьте те же адреса, что и для `kafka-topics.sh`:
+
+```bash
+BS="localhost:9092,localhost:9094,localhost:9096"
+"$KAFKA_HOME/bin/kafka-configs.sh" \
+  --bootstrap-server "$BS" \
+  --alter \
+  --entity-type topics \
+  --entity-name product-created-events-topic \
+  --add-config min.insync.replicas=2
+```
+
+Просмотр текущих настроек топика:
+
+```bash
+"$KAFKA_HOME/bin/kafka-configs.sh" \
+  --bootstrap-server localhost:9092 \
+  --describe \
+  --entity-type topics \
+  --entity-name product-created-events-topic
+```
+
 ---
 
 ## 7. Типичные ошибки

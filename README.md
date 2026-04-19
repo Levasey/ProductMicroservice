@@ -1,18 +1,18 @@
 # ProductMicroservice
 
-Микросервис на **Spring Boot 4** с **Spring Kafka**: создание продукта по HTTP, публикация события `ProductCreatedEvent` в топик `product-created-events-topic` (JSON).
+Микросервис на **Spring Boot 4** с **Spring Kafka**: создание продукта по HTTP (`POST /product`), публикация события `ProductCreatedEvent` в топик `product-created-events-topic` (JSON).
 
 ## Требования
 
 - **JDK 17** (в логах у вас может быть другая версия — для сборки заявлена 17 в `pom.xml`)
 - **Apache Maven** 3.6+ или **`./mvnw`** в корне репозитория
-- **Apache Kafka** (KRaft или ZooKeeper), брокеры из `spring.kafka.bootstrap-servers` в [`application.properties`](src/main/resources/application.properties) (по умолчанию `localhost:9092,localhost:9094`)
+- **Apache Kafka** (KRaft или ZooKeeper). Адреса брокеров задаются в [`application.properties`](src/main/resources/application.properties) через **`spring.kafka.bootstrap-servers`** (по умолчанию `localhost:9092,localhost:9094`). Используйте именно **`bootstrap-servers`** (множественное число): вариант `bootstrap-server` в Spring Boot **не подставляется** и оставляет настройки по умолчанию.
 
 ## HTTP API
 
 | Метод | Путь | Тело запроса (JSON) | Ответ |
 |--------|------|---------------------|--------|
-| `PATCH` | `/product` | `title` (string), `price` (number), `quantity` (integer) | **201 Created**, тело — строка `productId` |
+| `POST` | `/product` | `title` (string), `price` (number), `quantity` (integer) | **201 Created**, тело — строка `productId` |
 
 При ошибке в обработчике возможен ответ **500** с телом `ErrorMessage` (см. [`ProductController`](src/main/java/com/example/productmicroservice/controller/ProductController.java)).
 
@@ -34,19 +34,31 @@ java -jar target/ProductMicroservice-0.0.1-SNAPSHOT.jar
 Пример запроса:
 
 ```bash
-curl -s -X PATCH "http://localhost:<PORT>/product" \
+curl -s -X POST "http://localhost:<PORT>/product" \
   -H "Content-Type: application/json" \
   -d '{"title":"Sample","price":19.99,"quantity":10}'
 ```
 
+## Структура кода (кратко)
+
+- [`ProductController`](src/main/java/com/example/productmicroservice/controller/ProductController.java) — HTTP-слой.
+- [`ProductService`](src/main/java/com/example/productmicroservice/service/ProductService.java) — бизнес-логика и отправка в Kafka через `KafkaTemplate<String, ProductCreatedEvent>`.
+- [`KafkaConfig`](src/main/java/com/example/productmicroservice/config/KafkaConfig.java) — бины `ProducerFactory`, `KafkaTemplate` и объявление топика `NewTopic`.
+
 ## Kafka
 
-- Топик **`product-created-events-topic`** объявляется бином [`NewTopic`](src/main/java/com/example/productmicroservice/config/KafkaConfig.java): **3 партиции**, **replication factor 1** (подходит для **одного** брокера в разработке).
-- При старте приложения **KafkaAdmin** создаёт топик, если его ещё нет (`spring.kafka.admin.auto-create=true`).
-- Используйте **`spring.kafka.bootstrap-servers`** (именно **`bootstrap-servers`**, не `bootstrap-server` — иначе Spring Boot может оставить значения по умолчанию и подключение будет не тем, что вы ожидаете).
-- Для одного брокера задано **`spring.kafka.producer.acks=1`**, чтобы не требовать полный кворум реплик.
+### Топик `product-created-events-topic`
 
-Команды для локальной Kafka (список топиков, consumer и т.д.): [**KAFKA-KOMANDY.md**](KAFKA-KOMANDY.md).
+- Объявляется бином `NewTopic` в [`KafkaConfig`](src/main/java/com/example/productmicroservice/config/KafkaConfig.java): **3 партиции**, **replication factor 3**, в конфиге топика **`min.insync.replicas=2`**.
+- Такой RF и `min.insync.replicas` рассчитаны на **кластер из нескольких брокеров** (как минимум три узла с репликами на разных брокерах). На **одном** брокере создание топика с `replicas=3` завершится ошибкой — для локальной разработки на одном узле уменьшите `replicas` (и при необходимости `min.insync.replicas` / `acks`) под вашу среду.
+- При старте приложения **KafkaAdmin** создаёт топик, если его ещё нет (`spring.kafka.admin.auto-create=true`).
+
+### Продюсер
+
+- Настройки продюсера задаются в [`application.properties`](src/main/resources/application.properties): **`spring.kafka.producer.acks=all`**, таймауты **`delivery.timeout.ms`**, **`linger.ms`**, **`request.timeout.ms`** (см. файл).
+- В [`KafkaConfig`](src/main/java/com/example/productmicroservice/config/KafkaConfig.java) эти свойства собираются в `ProducerFactory` / `KafkaTemplate` для типа значения `ProductCreatedEvent` (JSON-сериализация через `JsonSerializer`).
+
+Команды для локальной Kafka (список топиков, consumer, **`kafka-configs`** для топика): [**KAFKA-KOMANDY.md**](KAFKA-KOMANDY.md).
 
 ### Частые предупреждения consumer
 
